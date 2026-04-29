@@ -19,7 +19,7 @@ export interface RestoreSessionResult {
 
 export interface PersistedChatMessage {
   id: string;
-  role: 'visitor' | 'assistant';
+  role: 'visitor' | 'assistant' | 'admin';
   content: string;
   createdAt: string;
 }
@@ -37,9 +37,17 @@ export interface AdminLeadSummary {
   visitorName: string;
   visitorEmail: string;
   visitorVerified: boolean;
+  assignedAdminId: string;
+  assignedAdminEmail: string;
   latestMessage: string;
   handoverRequestedAt: string | null;
   handoverTimeoutAt: string | null;
+}
+
+export interface AssignedAdminPayload {
+  adminId: string;
+  adminEmail: string;
+  adminSocketId: string;
 }
 
 @Injectable()
@@ -168,6 +176,7 @@ export class ChatService {
     extras: {
       handoverRequestedAt?: Date | null;
       handoverTimeoutAt?: Date | null;
+      assignedAdmin?: AssignedAdminPayload | null;
     } = {},
   ): Promise<void> {
     await this.chatSessionModel.updateOne(
@@ -177,8 +186,18 @@ export class ChatService {
           status,
           handoverRequestedAt: extras.handoverRequestedAt ?? null,
           handoverTimeoutAt: extras.handoverTimeoutAt ?? null,
+          assignedAdminId: extras.assignedAdmin?.adminId ?? '',
+          assignedAdminEmail: extras.assignedAdmin?.adminEmail ?? '',
+          assignedAdminSocketId: extras.assignedAdmin?.adminSocketId ?? '',
         },
       },
+    );
+  }
+
+  async assignAdminSocket(adminId: string, socketId: string) {
+    await this.chatSessionModel.updateMany(
+      { assignedAdminId: adminId, status: 'LIVE' },
+      { $set: { assignedAdminSocketId: socketId } },
     );
   }
 
@@ -194,6 +213,8 @@ export class ChatService {
       visitorName: session.visitorName,
       visitorEmail: session.visitorEmail,
       visitorVerified: session.visitorVerified,
+      assignedAdminId: session.assignedAdminId,
+      assignedAdminEmail: session.assignedAdminEmail,
       latestMessage: session.messages.at(-1)?.content ?? '',
       handoverRequestedAt: session.handoverRequestedAt?.toISOString() ?? null,
       handoverTimeoutAt: session.handoverTimeoutAt?.toISOString() ?? null,

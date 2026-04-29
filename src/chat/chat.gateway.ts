@@ -8,16 +8,19 @@ import {
   WebSocketServer,
 } from '@nestjs/websockets';
 import { Server, Socket } from 'socket.io';
+import { AuthService } from 'src/auth/auth.service';
 import { ChatService, ChatDeviceInfoPayload } from './chat.service';
 import { AiService } from './ai.service';
 import { randomUUID } from 'crypto';
 import { customConfig } from 'src/config/config';
+import { FcmService } from './fcm.service';
 import { FirebaseAuthService } from './firebase-auth.service';
 
 interface ChatHandshakeAuth {
   sessionId?: string;
   deviceInfo?: ChatDeviceInfoPayload;
   role?: 'visitor' | 'admin';
+  token?: string;
 }
 
 @WebSocketGateway({
@@ -32,11 +35,14 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
   private readonly handoverTimeouts = new Map<string, NodeJS.Timeout>();
   private readonly adminRoom = 'chat:admins';
   private readonly handoverTimeoutMs = Number(customConfig().HANDOVER_TIMEOUT_MS || 60000);
+  private readonly adminSockets = new Map<string, string>();
 
   constructor(
     private readonly chatService: ChatService,
     private readonly aiService: AiService,
     private readonly firebaseAuthService: FirebaseAuthService,
+    private readonly authService: AuthService,
+    private readonly fcmService: FcmService,
   ) { }
 
   @WebSocketServer()
@@ -45,8 +51,23 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
   async handleConnection(socket: Socket): Promise<void> {
     const auth = (socket.handshake.auth ?? {}) as ChatHandshakeAuth;
     if (auth.role === 'admin') {
-      socket.join(this.adminRoom);
-      socket.emit('admin:queue.snapshot', await this.chatService.listAdminLeads());
+      const token = auth.token?.trim();
+      if (!token) {
+        socket.disconnect();
+        return;
+      }
+
+      try {
+        const admin = await this.authService.validateAdminAccessToken(token);
+        socket.data.admin = admin;
+        this.adminSockets.set(admin.id, socket.id);
+        await this.chatService.assignAdminSocket(admin.id, socket.id);
+        socket.join(this.adminRoom);
+        socket.emit('admin:queue.snapshot', await this.chatService.listAdminLeads());
+      } catch {
+        socket.emit('chat:error', { code: 'INVALID_ADMIN_TOKEN' });
+        socket.disconnect();
+      }
       return;
     }
 
@@ -73,6 +94,10 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
   async handleDisconnect(socket: Socket): Promise<void> {
     const auth = (socket.handshake.auth ?? {}) as ChatHandshakeAuth;
     if (auth.role === 'admin') {
+      const admin = socket.data.admin as { id: string } | undefined;
+      if (admin) {
+        this.adminSockets.delete(admin.id);
+      }
       return;
     }
 
@@ -101,6 +126,11 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     });
 
     socket.emit('chat:message.created', visitorMessage);
+
+    if (session.status === 'LIVE' && session.assignedAdminSocketId) {
+      this.server.to(session.assignedAdminSocketId).emit('chat:message.created', visitorMessage);
+      return;
+    }
 
     const aiReply = await this.aiService.generateReply(
       [...this.chatService.serializeMessages(session.messages), visitorMessage],
@@ -164,6 +194,13 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
         this.server.to(this.adminRoom).emit('admin:lead.updated', this.chatService.toAdminLeadSummary(refreshedSession));
       }
 
+      await this.fcmService.sendNewLeadAlert({
+        sessionId: session.sessionId,
+        visitorName: visitor.name,
+        visitorEmail: visitor.email,
+        status: 'HANDOVER_REQUESTED',
+      });
+
       this.startHandoverTimeout(session.sessionId);
     } catch (error) {
       socket.emit('chat:error', {
@@ -174,12 +211,13 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
   }
 
   @SubscribeMessage('admin:handover.accept')
+  @SubscribeMessage('admin_join_chat')
   async handleAdminAccept(
     @ConnectedSocket() socket: Socket,
     @MessageBody() payload: { sessionId?: string },
   ): Promise<void> {
-    const auth = (socket.handshake.auth ?? {}) as ChatHandshakeAuth;
-    if (auth.role !== 'admin') {
+    const admin = socket.data.admin as { id: string; email: string } | undefined;
+    if (!admin) {
       socket.emit('chat:error', { code: 'UNAUTHORIZED_ADMIN_ACTION' });
       return;
     }
@@ -190,14 +228,63 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     }
 
     this.clearHandoverTimeout(sessionId);
-    await this.chatService.setStatus(sessionId, 'LIVE');
+    await this.chatService.setStatus(sessionId, 'LIVE', {
+      assignedAdmin: {
+        adminId: admin.id,
+        adminEmail: admin.email,
+        adminSocketId: socket.id,
+      },
+    });
     const session = await this.chatService.getSessionById(sessionId);
     if (!session) {
       return;
     }
 
     this.server.to(session.socketId).emit('handover:accepted', { sessionId, status: 'LIVE' });
+    socket.emit('admin:handover.accepted', {
+      sessionId,
+      status: 'LIVE',
+      messages: this.chatService.serializeMessages(session.messages),
+      visitorName: session.visitorName,
+      visitorEmail: session.visitorEmail,
+    });
     this.server.to(this.adminRoom).emit('admin:lead.updated', this.chatService.toAdminLeadSummary(session));
+  }
+
+  @SubscribeMessage('admin:message.send')
+  async handleAdminMessage(
+    @ConnectedSocket() socket: Socket,
+    @MessageBody() payload: { sessionId?: string; content?: string },
+  ): Promise<void> {
+    const admin = socket.data.admin as { id: string } | undefined;
+    if (!admin) {
+      socket.emit('chat:error', { code: 'UNAUTHORIZED_ADMIN_ACTION' });
+      return;
+    }
+
+    const sessionId = payload?.sessionId?.trim();
+    const content = payload?.content?.trim();
+    if (!sessionId || !content) {
+      return;
+    }
+
+    const session = await this.chatService.getSessionById(sessionId);
+    if (!session || session.status !== 'LIVE' || session.assignedAdminId !== admin.id) {
+      socket.emit('chat:error', { code: 'INVALID_LIVE_SESSION' });
+      return;
+    }
+
+    const adminMessage = await this.chatService.appendMessage(sessionId, {
+      id: randomUUID(),
+      role: 'admin',
+      content,
+    });
+
+    socket.emit('chat:message.created', adminMessage);
+    this.server.to(session.socketId).emit('chat:message.created', adminMessage);
+    this.server.to(this.adminRoom).emit('admin:lead.updated', {
+      ...this.chatService.toAdminLeadSummary(await this.chatService.getSessionById(sessionId) ?? session),
+    });
   }
 
   private startHandoverTimeout(sessionId: string): void {

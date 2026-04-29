@@ -26,8 +26,8 @@ export class ChatMessage {
   @Prop({ type: String, required: true })
   id: string;
 
-  @Prop({ type: String, enum: ['visitor', 'assistant'], required: true })
-  role: 'visitor' | 'assistant';
+  @Prop({ type: String, enum: ['visitor', 'assistant', 'admin'], required: true })
+  role: 'visitor' | 'assistant' | 'admin';
 
   @Prop({ type: String, required: true })
   content: string;
@@ -87,6 +87,15 @@ export class ChatSession {
 
   @Prop({ type: Boolean, default: false })
   visitorVerified: boolean;
+
+  @Prop({ type: String, default: '' })
+  assignedAdminId: string;
+
+  @Prop({ type: String, default: '' })
+  assignedAdminEmail: string;
+
+  @Prop({ type: String, default: '' })
+  assignedAdminSocketId: string;
 }
 
 export type ChatSessionDocument = HydratedDocument<ChatSession>;

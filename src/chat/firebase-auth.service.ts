@@ -12,11 +12,12 @@ export interface VerifiedFirebaseVisitor {
 
 @Injectable()
 export class FirebaseAuthService {
+  private readonly app: App | null;
   private readonly auth: Auth | null;
 
   constructor() {
-    const app = this.getOrCreateFirebaseApp();
-    this.auth = app ? getAuth(app) : null;
+    this.app = this.getOrCreateFirebaseApp();
+    this.auth = this.app ? getAuth(this.app) : null;
   }
 
   async verifyVisitorToken(idToken: string): Promise<VerifiedFirebaseVisitor> {
@@ -32,6 +33,10 @@ export class FirebaseAuthService {
       name: decoded.name ?? '',
       photoUrl: decoded.picture ?? '',
     };
+  }
+
+  getFirebaseApp(): App | null {
+    return this.app;
   }
 
   private getOrCreateFirebaseApp(): App | null {

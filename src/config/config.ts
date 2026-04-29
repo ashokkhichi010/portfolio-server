@@ -33,6 +33,16 @@ export const customConfig = () => ({
     EMAIL_FROM: process.env.EMAIL_FROM,
   },
 
+  ADMIN: {
+    EMAIL: process.env.ADMIN_EMAIL,
+    PASSWORD: process.env.ADMIN_PASSWORD,
+    DISPLAY_NAME: process.env.ADMIN_DISPLAY_NAME,
+  },
+
+  WEB_PUSH: {
+    VAPID_KEY: process.env.FIREBASE_VAPID_KEY,
+  },
+
   BCRYPT_SALT: 10,
 
   OTP_EXPIRES_MINUTES: 10,
