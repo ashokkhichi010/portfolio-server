@@ -21,6 +21,23 @@ export class ChatDeviceInfo {
 
 export const chatDeviceInfoSchema = SchemaFactory.createForClass(ChatDeviceInfo);
 
+@Schema({ _id: false })
+export class ChatMessage {
+  @Prop({ type: String, required: true })
+  id: string;
+
+  @Prop({ type: String, enum: ['visitor', 'assistant'], required: true })
+  role: 'visitor' | 'assistant';
+
+  @Prop({ type: String, required: true })
+  content: string;
+
+  @Prop({ type: Date, default: Date.now })
+  createdAt: Date;
+}
+
+export const chatMessageSchema = SchemaFactory.createForClass(ChatMessage);
+
 @Schema({ timestamps: true })
 export class ChatSession {
   @Prop({ type: String, required: true, unique: true, index: true })
@@ -40,6 +57,12 @@ export class ChatSession {
 
   @Prop({ type: chatDeviceInfoSchema, default: {} })
   deviceInfo: ChatDeviceInfo;
+
+  @Prop({ type: [chatMessageSchema], default: [] })
+  messages: ChatMessage[];
+
+  @Prop({ type: Boolean, default: false })
+  handoverOffered: boolean;
 }
 
 export type ChatSessionDocument = HydratedDocument<ChatSession>;

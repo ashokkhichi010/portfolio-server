@@ -5,6 +5,7 @@ import {
   chatSessionCollection,
   chatSessionSchema,
 } from './entities/chat-session.entity';
+import { AiService } from './ai.service';
 import { ChatGateway } from './chat.gateway';
 import { ChatService } from './chat.service';
 
@@ -14,7 +15,7 @@ import { ChatService } from './chat.service';
       { name: ChatSession.name, schema: chatSessionSchema, collection: chatSessionCollection },
     ]),
   ],
-  providers: [ChatGateway, ChatService],
+  providers: [ChatGateway, ChatService, AiService],
   exports: [ChatService],
 })
 export class ChatModule {}

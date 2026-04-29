@@ -3,6 +3,8 @@ export const customConfig = () => ({
   MONGO_URI: process.env.MONGO_URI,
   APP_URL: process.env.APP_URL,
   DASHBOARD_URL: process.env.DASHBOARD_URL,
+  OPENAI_API_KEY: process.env.OPENAI_API_KEY,
+  OPENAI_MODEL: process.env.OPENAI_MODEL,
   TOKEN_TYPES: {
     ACCESS: 'access',
     REFRESH: 'refresh',

@@ -2,7 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { randomUUID } from 'crypto';
 import { Model } from 'mongoose';
-import { ChatSession, ChatSessionDocument } from './entities/chat-session.entity';
+import { ChatMessage, ChatSession, ChatSessionDocument } from './entities/chat-session.entity';
 
 export interface ChatDeviceInfoPayload {
   userAgent?: string;
@@ -15,6 +15,13 @@ export interface ChatDeviceInfoPayload {
 export interface RestoreSessionResult {
   session: ChatSessionDocument;
   isRestored: boolean;
+}
+
+export interface PersistedChatMessage {
+  id: string;
+  role: 'visitor' | 'assistant';
+  content: string;
+  createdAt: string;
 }
 
 @Injectable()
@@ -75,6 +82,56 @@ export class ChatService {
         },
       },
     );
+  }
+
+  async getSessionBySocketId(socketId: string): Promise<ChatSessionDocument | null> {
+    return await this.chatSessionModel.findOne({ socketId });
+  }
+
+  async appendMessage(
+    sessionId: string,
+    message: Omit<ChatMessage, 'createdAt'> & { createdAt?: Date },
+  ): Promise<PersistedChatMessage> {
+    const createdAt = message.createdAt ?? new Date();
+
+    await this.chatSessionModel.updateOne(
+      { sessionId },
+      {
+        $push: {
+          messages: {
+            $each: [
+              {
+                id: message.id,
+                role: message.role,
+                content: message.content,
+                createdAt,
+              },
+            ],
+            $slice: -100,
+          },
+        },
+      },
+    );
+
+    return {
+      id: message.id,
+      role: message.role,
+      content: message.content,
+      createdAt: createdAt.toISOString(),
+    };
+  }
+
+  async setHandoverOffered(sessionId: string, handoverOffered: boolean): Promise<void> {
+    await this.chatSessionModel.updateOne({ sessionId }, { $set: { handoverOffered } });
+  }
+
+  serializeMessages(messages: ChatMessage[] = []): PersistedChatMessage[] {
+    return messages.map((message) => ({
+      id: message.id,
+      role: message.role,
+      content: message.content,
+      createdAt: message.createdAt.toISOString(),
+    }));
   }
 
   private sanitizeDeviceInfo(deviceInfo: ChatDeviceInfoPayload | undefined) {
