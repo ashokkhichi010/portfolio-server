@@ -8,6 +8,7 @@ import {
 import { AiService } from './ai.service';
 import { ChatGateway } from './chat.gateway';
 import { ChatService } from './chat.service';
+import { FirebaseAuthService } from './firebase-auth.service';
 
 @Module({
   imports: [
@@ -15,7 +16,7 @@ import { ChatService } from './chat.service';
       { name: ChatSession.name, schema: chatSessionSchema, collection: chatSessionCollection },
     ]),
   ],
-  providers: [ChatGateway, ChatService, AiService],
+  providers: [ChatGateway, ChatService, AiService, FirebaseAuthService],
   exports: [ChatService],
 })
 export class ChatModule {}

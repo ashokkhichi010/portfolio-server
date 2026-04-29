@@ -63,6 +63,30 @@ export class ChatSession {
 
   @Prop({ type: Boolean, default: false })
   handoverOffered: boolean;
+
+  @Prop({ type: String, enum: ['AI', 'HANDOVER_REQUESTED', 'LIVE', 'ADMIN_BUSY'], default: 'AI' })
+  status: 'AI' | 'HANDOVER_REQUESTED' | 'LIVE' | 'ADMIN_BUSY';
+
+  @Prop({ type: Date, default: null })
+  handoverRequestedAt: Date | null;
+
+  @Prop({ type: Date, default: null })
+  handoverTimeoutAt: Date | null;
+
+  @Prop({ type: String, default: '' })
+  visitorUid: string;
+
+  @Prop({ type: String, default: '' })
+  visitorEmail: string;
+
+  @Prop({ type: String, default: '' })
+  visitorName: string;
+
+  @Prop({ type: String, default: '' })
+  visitorPhotoUrl: string;
+
+  @Prop({ type: Boolean, default: false })
+  visitorVerified: boolean;
 }
 
 export type ChatSessionDocument = HydratedDocument<ChatSession>;

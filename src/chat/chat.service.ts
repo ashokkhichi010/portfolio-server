@@ -24,6 +24,24 @@ export interface PersistedChatMessage {
   createdAt: string;
 }
 
+export interface VerifiedVisitor {
+  uid: string;
+  email: string;
+  name: string;
+  photoUrl: string;
+}
+
+export interface AdminLeadSummary {
+  sessionId: string;
+  status: 'AI' | 'HANDOVER_REQUESTED' | 'LIVE' | 'ADMIN_BUSY';
+  visitorName: string;
+  visitorEmail: string;
+  visitorVerified: boolean;
+  latestMessage: string;
+  handoverRequestedAt: string | null;
+  handoverTimeoutAt: string | null;
+}
+
 @Injectable()
 export class ChatService {
   constructor(
@@ -88,6 +106,10 @@ export class ChatService {
     return await this.chatSessionModel.findOne({ socketId });
   }
 
+  async getSessionById(sessionId: string): Promise<ChatSessionDocument | null> {
+    return await this.chatSessionModel.findOne({ sessionId });
+  }
+
   async appendMessage(
     sessionId: string,
     message: Omit<ChatMessage, 'createdAt'> & { createdAt?: Date },
@@ -123,6 +145,59 @@ export class ChatService {
 
   async setHandoverOffered(sessionId: string, handoverOffered: boolean): Promise<void> {
     await this.chatSessionModel.updateOne({ sessionId }, { $set: { handoverOffered } });
+  }
+
+  async verifyVisitor(sessionId: string, visitor: VerifiedVisitor): Promise<void> {
+    await this.chatSessionModel.updateOne(
+      { sessionId },
+      {
+        $set: {
+          visitorUid: visitor.uid,
+          visitorEmail: visitor.email,
+          visitorName: visitor.name,
+          visitorPhotoUrl: visitor.photoUrl,
+          visitorVerified: true,
+        },
+      },
+    );
+  }
+
+  async setStatus(
+    sessionId: string,
+    status: 'AI' | 'HANDOVER_REQUESTED' | 'LIVE' | 'ADMIN_BUSY',
+    extras: {
+      handoverRequestedAt?: Date | null;
+      handoverTimeoutAt?: Date | null;
+    } = {},
+  ): Promise<void> {
+    await this.chatSessionModel.updateOne(
+      { sessionId },
+      {
+        $set: {
+          status,
+          handoverRequestedAt: extras.handoverRequestedAt ?? null,
+          handoverTimeoutAt: extras.handoverTimeoutAt ?? null,
+        },
+      },
+    );
+  }
+
+  async listAdminLeads(): Promise<AdminLeadSummary[]> {
+    const sessions = await this.chatSessionModel.find().sort({ updatedAt: -1 }).limit(50);
+    return sessions.map((session) => this.toAdminLeadSummary(session));
+  }
+
+  toAdminLeadSummary(session: ChatSessionDocument): AdminLeadSummary {
+    return {
+      sessionId: session.sessionId,
+      status: session.status,
+      visitorName: session.visitorName,
+      visitorEmail: session.visitorEmail,
+      visitorVerified: session.visitorVerified,
+      latestMessage: session.messages.at(-1)?.content ?? '',
+      handoverRequestedAt: session.handoverRequestedAt?.toISOString() ?? null,
+      handoverTimeoutAt: session.handoverTimeoutAt?.toISOString() ?? null,
+    };
   }
 
   serializeMessages(messages: ChatMessage[] = []): PersistedChatMessage[] {
