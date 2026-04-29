@@ -4,6 +4,7 @@ export class RegisterDeviceDto {
   @IsString()
   deviceId: string;
 
+  @IsOptional()
   @IsString()
   fcmToken: string;
 
@@ -14,4 +15,16 @@ export class RegisterDeviceDto {
   @IsOptional()
   @IsString()
   userAgent?: string;
+
+  @IsOptional()
+  @IsString()
+  language?: string;
+
+  @IsOptional()
+  @IsString()
+  screen?: string;
+
+  @IsOptional()
+  @IsString()
+  timezone?: string;
 }

@@ -4,6 +4,9 @@ import { HydratedDocument } from 'mongoose';
 @Schema({ _id: false })
 export class ChatDeviceInfo {
   @Prop({ type: String, default: '' })
+  deviceId: string;
+
+  @Prop({ type: String, default: '' })
   userAgent: string;
 
   @Prop({ type: String, default: '' })
@@ -87,6 +90,9 @@ export class ChatSession {
 
   @Prop({ type: Boolean, default: false })
   visitorVerified: boolean;
+
+  @Prop({ type: String, default: '' })
+  visitorFcmToken: string;
 
   @Prop({ type: String, default: '' })
   assignedAdminId: string;

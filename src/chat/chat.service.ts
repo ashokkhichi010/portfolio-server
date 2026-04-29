@@ -5,6 +5,7 @@ import { Model } from 'mongoose';
 import { ChatMessage, ChatSession, ChatSessionDocument } from './entities/chat-session.entity';
 
 export interface ChatDeviceInfoPayload {
+  deviceId?: string;
   userAgent?: string;
   language?: string;
   platform?: string;
@@ -40,6 +41,7 @@ export interface AdminLeadSummary {
   assignedAdminId: string;
   assignedAdminEmail: string;
   latestMessage: string;
+  messages: PersistedChatMessage[];
   handoverRequestedAt: string | null;
   handoverTimeoutAt: string | null;
 }
@@ -170,6 +172,10 @@ export class ChatService {
     );
   }
 
+  async setVisitorNotificationToken(sessionId: string, fcmToken: string): Promise<void> {
+    await this.chatSessionModel.updateOne({ sessionId }, { $set: { visitorFcmToken: fcmToken } });
+  }
+
   async setStatus(
     sessionId: string,
     status: 'AI' | 'HANDOVER_REQUESTED' | 'LIVE' | 'ADMIN_BUSY',
@@ -216,6 +222,7 @@ export class ChatService {
       assignedAdminId: session.assignedAdminId,
       assignedAdminEmail: session.assignedAdminEmail,
       latestMessage: session.messages.at(-1)?.content ?? '',
+      messages: this.serializeMessages(session.messages),
       handoverRequestedAt: session.handoverRequestedAt?.toISOString() ?? null,
       handoverTimeoutAt: session.handoverTimeoutAt?.toISOString() ?? null,
     };
@@ -232,6 +239,7 @@ export class ChatService {
 
   private sanitizeDeviceInfo(deviceInfo: ChatDeviceInfoPayload | undefined) {
     return {
+      deviceId: deviceInfo?.deviceId ?? '',
       userAgent: deviceInfo?.userAgent ?? '',
       language: deviceInfo?.language ?? '',
       platform: deviceInfo?.platform ?? '',

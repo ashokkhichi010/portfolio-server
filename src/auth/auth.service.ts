@@ -26,7 +26,7 @@ export class AuthService implements OnModuleInit {
     private readonly refreshTokenModel: Model<AdminRefreshTokenDocument>,
     private readonly jwtService: JwtService,
     private readonly mailService: MailService,
-  ) {}
+  ) { }
 
   async onModuleInit(): Promise<void> {
     const adminConfig = customConfig().ADMIN;

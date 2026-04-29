@@ -55,4 +55,45 @@ export class FcmService {
 
     await this.deviceService.deactivateTokens(invalidTokens);
   }
+
+  async sendVisitorMessageAlert(payload: {
+    ownerId: string;
+    title: string;
+    body: string;
+    sessionId: string;
+    status: string;
+    type: string;
+  }) {
+    if (!this.messaging) {
+      return;
+    }
+
+    const tokens = await this.deviceService.getActiveVisitorTokens(payload.ownerId);
+    if (!tokens.length) {
+      return;
+    }
+
+    const response = await this.messaging.sendEachForMulticast({
+      tokens,
+      notification: {
+        title: payload.title,
+        body: payload.body,
+      },
+      data: {
+        sessionId: payload.sessionId,
+        status: payload.status,
+        type: payload.type,
+      },
+    });
+
+    const invalidTokens = response.responses
+      .map((item, index) => ({ item, token: tokens[index] }))
+      .filter(({ item }) =>
+        item.error?.code === 'messaging/invalid-registration-token' ||
+        item.error?.code === 'messaging/registration-token-not-registered',
+      )
+      .map(({ token }) => token);
+
+    await this.deviceService.deactivateTokens(invalidTokens);
+  }
 }

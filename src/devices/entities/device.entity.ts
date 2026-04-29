@@ -4,12 +4,15 @@ import { HydratedDocument } from 'mongoose';
 @Schema({ timestamps: true })
 export class Device {
   @Prop({ type: String, required: true, index: true })
-  adminId: string;
+  ownerId: string;
+
+  @Prop({ type: String, enum: ['admin', 'visitor'], required: true, index: true })
+  ownerType: 'admin' | 'visitor';
 
   @Prop({ type: String, required: true, index: true })
   deviceId: string;
 
-  @Prop({ type: String, required: true })
+  @Prop({ type: String, default: '' })
   fcmToken: string;
 
   @Prop({ type: String, default: '' })
@@ -17,6 +20,15 @@ export class Device {
 
   @Prop({ type: String, default: '' })
   userAgent: string;
+
+  @Prop({ type: String, default: '' })
+  language: string;
+
+  @Prop({ type: String, default: '' })
+  screen: string;
+
+  @Prop({ type: String, default: '' })
+  timezone: string;
 
   @Prop({ type: Date, default: Date.now })
   lastSeenAt: Date;

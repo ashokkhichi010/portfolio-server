@@ -13,6 +13,6 @@ export class DeviceController {
     @Req() req: { user: { sub: string } },
     @Body() payload: RegisterDeviceDto,
   ) {
-    return this.deviceService.registerAdminDevice(req.user.sub, payload);
+    return this.deviceService.registerDevice('admin', req.user.sub, payload);
   }
 }
