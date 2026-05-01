@@ -12,6 +12,10 @@ import { ChatGateway } from './chat.gateway';
 import { ChatService } from './chat.service';
 import { FcmService } from './fcm.service';
 import { FirebaseAuthService } from './firebase-auth.service';
+import { OpenAIService } from './open-ai';
+import { GroqAiService } from './groq-ai';
+import { GenerativeAiService } from './generative-ai';
+import { OpenRouterAiService } from './open-router-ai';
 
 @Module({
   imports: [
@@ -21,7 +25,7 @@ import { FirebaseAuthService } from './firebase-auth.service';
       { name: ChatSession.name, schema: chatSessionSchema, collection: chatSessionCollection },
     ]),
   ],
-  providers: [ChatGateway, ChatService, AiService, FirebaseAuthService, FcmService],
+  providers: [ChatGateway, ChatService, AiService, FirebaseAuthService, FcmService, OpenAIService, GroqAiService, GenerativeAiService, OpenRouterAiService],
   exports: [ChatService],
 })
 export class ChatModule {}

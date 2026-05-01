@@ -3,8 +3,16 @@ export const customConfig = () => ({
   MONGO_URI: process.env.MONGO_URI,
   APP_URL: process.env.APP_URL,
   DASHBOARD_URL: process.env.DASHBOARD_URL,
+
   OPENAI_API_KEY: process.env.OPENAI_API_KEY,
   OPENAI_MODEL: process.env.OPENAI_MODEL,
+  GOOGLE_AI_API_KEY: process.env.GOOGLE_AI_API_KEY,
+  GOOGLE_MODEL: process.env.GOOGLE_MODEL,
+  GROQ_API_KEY: process.env.GROQ_API_KEY,
+  GROQ_MODEL: process.env.GROQ_MODEL,
+  OPEN_ROUTER_API_KEY: process.env.OPEN_ROUTER_API_KEY,
+  OPEN_ROUTER_MODEL: process.env.OPEN_ROUTER_MODEL,
+
   HANDOVER_TIMEOUT_MS: process.env.HANDOVER_TIMEOUT_MS,
   FIREBASE_PROJECT_ID: process.env.FIREBASE_PROJECT_ID,
   FIREBASE_CLIENT_EMAIL: process.env.FIREBASE_CLIENT_EMAIL,
