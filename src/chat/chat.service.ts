@@ -207,6 +207,10 @@ export class ChatService {
     );
   }
 
+  async listActiveLiveSessionsForAdmin(adminId: string): Promise<ChatSessionDocument[]> {
+    return await this.chatSessionModel.find({ assignedAdminId: adminId, status: 'LIVE' });
+  }
+
   async listAdminLeads(): Promise<AdminLeadSummary[]> {
     const sessions = await this.chatSessionModel.find().sort({ updatedAt: -1 }).limit(50);
     return sessions.map((session) => this.toAdminLeadSummary(session));

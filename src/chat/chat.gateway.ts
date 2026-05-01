@@ -52,6 +52,10 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
   @WebSocketServer()
   server: Server;
 
+  private hasOnlineAdmins(): boolean {
+    return this.adminSockets.size > 0;
+  }
+
   async handleConnection(socket: Socket): Promise<void> {
     const auth = (socket.handshake.auth ?? {}) as ChatHandshakeAuth;
     if (auth.role === 'admin') {
@@ -110,6 +114,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
       handoverStatus: session.status,
       handoverRequestedAt: session.handoverRequestedAt?.toISOString() ?? null,
       handoverExpiresAt: session.handoverTimeoutAt?.toISOString() ?? null,
+      adminAvailable: this.hasOnlineAdmins(),
       visitorVerified: session.visitorVerified,
       visitorEmail: session.visitorEmail,
       visitorName: session.visitorName,
@@ -122,6 +127,23 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
       const admin = socket.data.admin as { id: string } | undefined;
       if (admin) {
         this.adminSockets.delete(admin.id);
+        const liveSessions = await this.chatService.listActiveLiveSessionsForAdmin(admin.id);
+        for (const session of liveSessions) {
+          await this.chatService.setStatus(session.sessionId, 'AI');
+          const updatedSession = await this.chatService.getSessionById(session.sessionId);
+          if (!updatedSession) {
+            continue;
+          }
+
+          if (updatedSession.socketId) {
+            this.server.to(updatedSession.socketId).emit('handover:return-to-ai', {
+              sessionId: session.sessionId,
+              status: 'AI',
+              adminAvailable: this.hasOnlineAdmins(),
+            });
+          }
+          this.server.to(this.adminRoom).emit('admin:lead.updated', this.chatService.toAdminLeadSummary(updatedSession));
+        }
       }
       return;
     }
@@ -171,11 +193,12 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
 
       socket.emit('chat:message.created', assistantMessage);
 
-      if (aiReply.offerHandover && !session.handoverOffered) {
+      if (aiReply.offerHandover && !session.handoverOffered && this.hasOnlineAdmins()) {
         await this.chatService.setHandoverOffered(session.sessionId, true);
         socket.emit('AI_OFFER_HANDOVER', {
           sessionId: session.sessionId,
           reason: 'hire_or_contact_intent',
+          adminAvailable: true,
         });
       }
     } catch {
@@ -212,6 +235,11 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
         screen: session.deviceInfo.screen,
         timezone: session.deviceInfo.timezone,
       });
+
+      if (!this.hasOnlineAdmins()) {
+        await this.emitHandoverFailed(session.sessionId);
+        return;
+      }
 
       const requestedAt = new Date();
       const timeoutAt = new Date(requestedAt.getTime() + this.handoverTimeoutMs);
@@ -265,6 +293,12 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
       return;
     }
 
+    const session = await this.chatService.getSessionById(sessionId);
+    if (!session || (session.status !== 'HANDOVER_REQUESTED' && session.status !== 'AI')) {
+      socket.emit('chat:error', { code: 'INVALID_HANDOVER_STATE' });
+      return;
+    }
+
     this.clearHandoverTimeout(sessionId);
     await this.chatService.setStatus(sessionId, 'LIVE', {
       assignedAdmin: {
@@ -273,20 +307,62 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
         adminSocketId: socket.id,
       },
     });
-    const session = await this.chatService.getSessionById(sessionId);
-    if (!session) {
+    const liveSession = await this.chatService.getSessionById(sessionId);
+    if (!liveSession) {
       return;
     }
 
-    this.server.to(session.socketId).emit('handover:accepted', { sessionId, status: 'LIVE' });
+    this.server.to(liveSession.socketId).emit('handover:accepted', { sessionId, status: 'LIVE' });
     socket.emit('admin:handover.accepted', {
       sessionId,
       status: 'LIVE',
-      messages: this.chatService.serializeMessages(session.messages),
-      visitorName: session.visitorName,
-      visitorEmail: session.visitorEmail,
+      messages: this.chatService.serializeMessages(liveSession.messages),
+      visitorName: liveSession.visitorName,
+      visitorEmail: liveSession.visitorEmail,
     });
-    this.server.to(this.adminRoom).emit('admin:lead.updated', this.chatService.toAdminLeadSummary(session));
+    this.server.to(this.adminRoom).emit('admin:lead.updated', this.chatService.toAdminLeadSummary(liveSession));
+  }
+
+  @SubscribeMessage('return_to_ai')
+  async handleReturnToAi(
+    @ConnectedSocket() socket: Socket,
+    @MessageBody() payload: { sessionId?: string },
+  ): Promise<void> {
+    const admin = socket.data.admin as { id: string } | undefined;
+    if (!admin) {
+      socket.emit('chat:error', { code: 'UNAUTHORIZED_ADMIN_ACTION' });
+      return;
+    }
+
+    const sessionId = payload?.sessionId?.trim();
+    if (!sessionId) {
+      return;
+    }
+
+    const session = await this.chatService.getSessionById(sessionId);
+    if (!session || session.status !== 'LIVE' || session.assignedAdminId !== admin.id) {
+      socket.emit('chat:error', { code: 'INVALID_LIVE_SESSION' });
+      return;
+    }
+
+    this.clearHandoverTimeout(sessionId);
+    await this.chatService.setStatus(sessionId, 'AI');
+    const updatedSession = await this.chatService.getSessionById(sessionId);
+    if (!updatedSession) {
+      return;
+    }
+
+    this.server.to(updatedSession.socketId).emit('handover:return-to-ai', {
+      sessionId,
+      status: 'AI',
+      adminAvailable: this.hasOnlineAdmins(),
+    });
+    socket.emit('handover:return-to-ai', {
+      sessionId,
+      status: 'AI',
+      adminAvailable: this.hasOnlineAdmins(),
+    });
+    this.server.to(this.adminRoom).emit('admin:lead.updated', this.chatService.toAdminLeadSummary(updatedSession));
   }
 
   @SubscribeMessage('admin:message.send')
@@ -339,22 +415,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     this.clearHandoverTimeout(sessionId);
 
     const timeout = setTimeout(async () => {
-      await this.chatService.setStatus(sessionId, 'ADMIN_BUSY');
-      const session = await this.chatService.getSessionById(sessionId);
-      if (!session) {
-        return;
-      }
-
-      const fallbackMessage = await this.chatService.appendMessage(sessionId, {
-        id: randomUUID(),
-        role: 'assistant',
-        content:
-          'Admin is busy right now, so please leave your message, email, or contact number and we will reach back to you.',
-      });
-
-      this.server.to(session.socketId).emit('ADMIN_BUSY', { sessionId, status: 'ADMIN_BUSY' });
-      this.server.to(session.socketId).emit('chat:message.created', fallbackMessage);
-      this.server.to(this.adminRoom).emit('admin:lead.updated', this.chatService.toAdminLeadSummary(session));
+      await this.emitHandoverFailed(sessionId);
       this.handoverTimeouts.delete(sessionId);
     }, this.handoverTimeoutMs);
 
@@ -376,6 +437,11 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     socket: Socket,
     reason: 'ai_failure',
   ) {
+    if (!this.hasOnlineAdmins()) {
+      await this.emitHandoverFailed(session.sessionId);
+      return;
+    }
+
     const requestedAt = new Date();
     const timeoutAt = new Date(requestedAt.getTime() + this.handoverTimeoutMs);
     await this.chatService.setHandoverOffered(session.sessionId, true);
@@ -412,6 +478,33 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     }
 
     this.startHandoverTimeout(session.sessionId);
+  }
+
+  private async emitHandoverFailed(sessionId: string): Promise<void> {
+    await this.chatService.setStatus(sessionId, 'AI');
+    const session = await this.chatService.getSessionById(sessionId);
+    if (!session) {
+      return;
+    }
+
+    const fallbackMessage = await this.chatService.appendMessage(sessionId, {
+      id: randomUUID(),
+      role: 'assistant',
+      content:
+        'No admin is available right now, so please leave your message, email, or contact number and we will reach back to you.',
+    });
+
+    this.server.to(session.socketId).emit('HANDOVER_FAILED', {
+      sessionId,
+      status: 'AI',
+      adminAvailable: this.hasOnlineAdmins(),
+    });
+    this.server.to(session.socketId).emit('chat:message.created', fallbackMessage);
+
+    const updatedSession = await this.chatService.getSessionById(sessionId);
+    if (updatedSession) {
+      this.server.to(this.adminRoom).emit('admin:lead.updated', this.chatService.toAdminLeadSummary(updatedSession));
+    }
   }
 }
 
